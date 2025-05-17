@@ -144,11 +144,15 @@ impl<T: ParseChunkTag> ChunksReader<T> {
             // Warning: the formulation of this conditional is critical because len is untrusted
             // input, it may overflow when if added to anything.
             if self.len - self.consumed < len {
-                // When ffmpeg encodes wave to stdout the riff (parent) and data chunk lengths are
-                // (2^32)-1 since the size can't be known ahead of time.
-                if !(self.len == len && len == u32::MAX) {
+                // Some WAV files report a RIFF size that omits the 8‐byte data‐chunk header, so allow "data" to extend.
+                if tag == *b"data" {
+                    // Rescue the final data chunk by growing the parent to fit its payload.
+                    self.len = self.consumed + len;
+                }
+                // ffmpeg’s special case for piped output (both sizes == u32::MAX)
+                else if !(self.len == len && len == u32::MAX) {
                     debug!(
-                        "chunk length of {} exceeds parent (list) chunk length",
+                        "chunk length of {} exceeds parent chunk length",
                         String::from_utf8_lossy(&tag)
                     );
                     return decode_error("riff: chunk length exceeds parent (list) chunk length");
